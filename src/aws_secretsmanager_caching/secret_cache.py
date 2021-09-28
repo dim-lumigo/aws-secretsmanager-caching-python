@@ -96,3 +96,66 @@ class SecretCache:
         if secret is None:
             return secret
         return secret.get("SecretBinary")
+
+
+def assume_account_role(account_id, role_name, duration = 900):
+    """Temporary assume cross-account role.
+
+    :type account_id: str
+    :param account_id: Account ID for delegating
+
+    :type role_name: str
+    :param role_name: Role name to assume
+
+    :type duration: int
+    :param duration: Assumed role session duration (seconds)
+
+    :rtype: botocore.session.Session
+    :return: botocore session object
+    """
+    sts = botocore.session.get_session().create_client("sts")
+    role_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+    session_name = "SecretCacheSession"
+    response = sts.assume_role(
+        RoleArn=role_arn,
+        RoleSessionName=session_name,
+        DurationSeconds=duration
+        )
+    session = botocore.session.Session()
+    session.set_credentials(
+        access_key=response["Credentials"]["AccessKeyId"],
+        secret_key=response["Credentials"]["SecretAccessKey"],
+        token=response["Credentials"]["SessionToken"]
+        )
+    return session
+
+
+def get_crossaccount_clients(account_id, role_name, regions, duration=900):
+    """Return AWS SecretsManager clients for crossaccount access for multiple regions.
+
+    :type account_id: str
+    :param account_id: Account ID for delegating
+
+    :type role_name: str
+    :param role_name: Role name to assume
+
+    :type duration: int
+    :param duration: Assumed role session duration (seconds)
+
+    :rtype: List[botocore.client.BaseClient]
+    :return: List of botocore BaseClient clients
+    """
+    session = assume_account_role(account_id, role_name, duration)
+    return [session.create_client("secretsmanager", region) for region in regions]
+
+
+def get_multiregion_caches(clients):
+    """Return secret caches for multiple regions.
+
+    :type clients: List[botocore.client.BaseClient]
+    :param account_id: List of botocore BaseClient objects
+
+    :rtype: List[aws_secretsmanager_caching.SecretCache]
+    :return: List of SecretCache caches
+    """
+    return [SecretCache(client=client) for client in clients]
