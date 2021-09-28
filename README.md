@@ -89,6 +89,18 @@ cache = SecretCache(config=cache_config, client=client)
 secret = cache.get_secret_string('mysecret')
 ```
 
+#### Cross-account access
+In a case when Secrets Manager isolated in a different account, the client additionally requires assuming role instantiation as following:
+```python
+from aws_secretsmanager_caching import SecretCache, assume_account_role
+
+session = assume_account_role(account_id="0123456789012", role_name="RoleToAssume", duration=3600)
+client = session.create_client('secretsmanager')
+cache = SecretCache(config=cache_config, client=client)
+
+secret = cache.get_secret_string('mysecret')
+```
+
 #### Cache Configuration
 You can configure the cache config object with the following parameters:
 * `max_cache_size` - The maximum number of secrets to cache.  The default value is `1024`.
@@ -118,6 +130,34 @@ def function_to_be_decorated(func_username, func_password):
 def function_to_be_decorated(arg1, arg2, arg3):
     # arg1 contains the cache lookup result of the 'mysimplesecret' secret.
     # arg2 and arg3, in this example, must still be passed when calling function_to_be_decorated().
+```
+
+
+##### Multi-region caches failover
+Both decorators also accepts a cache list for a region outage failover and this can be used as following:
+```python
+from aws_secretsmanager_caching import (
+  InjectKeywordedSecretString,
+  get_crossaccount_clients,
+  get_multiregion_caches
+)
+
+
+caches = get_multiregion_caches(
+    get_crossaccount_clients(
+        account_id="0123456789012",
+        role_name="RoleToAssume",
+        regions=["us-east-1", "us-east-2"],
+        duration=3600
+        )
+    )
+
+
+@InjectKeywordedSecretString(secret_id='mysecret', cache=caches, func_username='username', func_password='password')
+def function_to_be_decorated(func_username, func_password):
+    print('Something cool is being done with the func_username and func_password arguments here')
+    ...
+
 ```
 
 ## Getting Help
