@@ -13,8 +13,46 @@
 """Decorators for use with caching library """
 import json
 
+from abc import ABC, abstractmethod
+from typing import List, Union
 
-class InjectSecretString:
+import botocore.exceptions
+
+
+class InjectSecretAbstract(ABC):
+    """High-level abstraction for Secrets Manager decorators."""
+
+    def _get_cached_secret(self):
+        """
+        Return cached secret.
+
+        :type cache: Union[Dict, str]
+        :param cache: Plaintext secret value or object
+        """
+
+        n = len(self.cache)
+        # Probe each replica (including primary) starting with the current one
+        replicas = [i % n for i in range(self.cache_id, self.cache_id + n)]
+        for replica in replicas:
+            try:
+                secret = self.cache[replica].get_secret_string(secret_id=self.secret_id)
+                self.cache_id = replica
+                break
+            except botocore.exceptions.ClientError as e:
+                if e.response["Error"]["Code"] in {"InternalFailure", "ServiceUnavailable"}:
+                    if replica == replicas[-1]:
+                        # All possible replicas were probed
+                        raise
+                else:
+                    raise
+        return secret
+
+    @abstractmethod
+    def __call__(self, func):
+        pass
+
+
+class InjectSecretString(InjectSecretAbstract):
     """Decorator implementing high-level Secrets Manager caching client"""
 
     def __init__(self, secret_id, cache):
@@ -24,11 +62,15 @@ class InjectSecretString:
         :type secret_id: str
         :param secret_id: The secret identifier
 
-        :type cache: aws_secretsmanager_caching.SecretCache
-        :param cache: Secret cache
+        :type cache: Union[aws_secretsmanager_caching.SecretCache, List[aws_secretsmanager_caching.SecretCache]]
+        :param cache: Single or multiple secret caches (including replica caches in case of region failure)
         """
 
-        self.cache = cache
+        self.cache_id = 0
+        if isinstance(cache, list):
+            self.cache = cache
+        else:
+            self.cache = [cache]
         self.secret_id = secret_id
 
     def __call__(self, func):
@@ -39,8 +81,7 @@ class InjectSecretString:
         :param func: The function for injecting a single non-keyworded argument too.
         :return The function with the injected argument.
         """
-
-        secret = self.cache.get_secret_string(secret_id=self.secret_id)
+        secret = self._get_cached_secret()
 
         def _wrapped_func(*args, **kwargs):
             """
@@ -51,7 +92,7 @@ class InjectSecretString:
         return _wrapped_func
 
 
-class InjectKeywordedSecretString:
+class InjectKeywordedSecretString(InjectSecretAbstract):
     """Decorator implementing high-level Secrets Manager caching client using JSON-based secrets"""
 
     def __init__(self, secret_id, cache, **kwargs):
@@ -65,11 +106,15 @@ class InjectKeywordedSecretString:
         :type secret_id: str
         :param secret_id: The secret identifier
 
-        :type cache: aws_secretsmanager_caching.SecretCache
-        :param cache: Secret cache
+        :type cache: Union[aws_secretsmanager_caching.SecretCache, List[aws_secretsmanager_caching.SecretCache]]
+        :param cache: Single or multiple secret caches (including replica caches in case of region failure)
         """
 
-        self.cache = cache
+        self.cache_id = 0
+        if isinstance(cache, list):
+            self.cache = cache
+        else:
+            self.cache = [cache]
         self.kwarg_map = kwargs
         self.secret_id = secret_id
 
@@ -83,7 +128,8 @@ class InjectKeywordedSecretString:
         """
 
         try:
-            secret = json.loads(self.cache.get_secret_string(secret_id=self.secret_id))
+            secret = self._get_cached_secret()
+            secret = json.loads(secret)
         except json.decoder.JSONDecodeError:
             raise RuntimeError('Cached secret is not valid JSON') from None
 
