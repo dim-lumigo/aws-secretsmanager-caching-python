@@ -15,7 +15,7 @@ from aws_secretsmanager_caching.config import SecretCacheConfig
 from aws_secretsmanager_caching.decorators import InjectKeywordedSecretString, InjectSecretString
 from aws_secretsmanager_caching.secret_cache import (
     SecretCache, get_crossaccount_clients, get_multiregion_caches, assume_account_role
-    )
+)
 
 __all__ = [
     "SecretCache",
@@ -25,4 +25,4 @@ __all__ = [
     "get_crossaccount_clients",
     "get_multiregion_caches",
     "assume_account_role"
-    ]
+]

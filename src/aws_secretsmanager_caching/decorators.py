@@ -14,13 +14,30 @@
 import json
 
 from abc import ABC, abstractmethod
-from typing import List, Union
 
 import botocore.exceptions
 
 
 class InjectSecretAbstract(ABC):
     """High-level abstraction for Secrets Manager decorators."""
+
+    def __init__(self, secret_id, cache):
+        """
+        Constructs a decorator to inject a single non-keyworded argument from a cached secret for a given function.
+
+        :type secret_id: str
+        :param secret_id: The secret identifier
+
+        :type cache: Union[aws_secretsmanager_caching.SecretCache, List[aws_secretsmanager_caching.SecretCache]]
+        :param cache: Single or multiple secret caches (including replica caches in case of region failure)
+        """
+
+        self.cache_id = 0
+        if isinstance(cache, list):
+            self.cache = cache
+        else:
+            self.cache = [cache]
+        self.secret_id = secret_id
 
     def _get_cached_secret(self):
         """
@@ -30,9 +47,9 @@ class InjectSecretAbstract(ABC):
         :param cache: Plaintext secret value or object
         """
 
-        n = len(self.cache)
+        n_caches = len(self.cache)
         # Probe each replica (including primary) starting with the current one
-        replicas = [i % n for i in range(self.cache_id, self.cache_id + n)]
+        replicas = [i % n_caches for i in range(self.cache_id, self.cache_id + n_caches)]
         for replica in replicas:
             try:
                 secret = self.cache[replica].get_secret_string(secret_id=self.secret_id)
@@ -54,24 +71,6 @@ class InjectSecretAbstract(ABC):
 
 class InjectSecretString(InjectSecretAbstract):
     """Decorator implementing high-level Secrets Manager caching client"""
-
-    def __init__(self, secret_id, cache):
-        """
-        Constructs a decorator to inject a single non-keyworded argument from a cached secret for a given function.
-
-        :type secret_id: str
-        :param secret_id: The secret identifier
-
-        :type cache: Union[aws_secretsmanager_caching.SecretCache, List[aws_secretsmanager_caching.SecretCache]]
-        :param cache: Single or multiple secret caches (including replica caches in case of region failure)
-        """
-
-        self.cache_id = 0
-        if isinstance(cache, list):
-            self.cache = cache
-        else:
-            self.cache = [cache]
-        self.secret_id = secret_id
 
     def __call__(self, func):
         """
@@ -110,13 +109,8 @@ class InjectKeywordedSecretString(InjectSecretAbstract):
         :param cache: Single or multiple secret caches (including replica caches in case of region failure)
         """
 
-        self.cache_id = 0
-        if isinstance(cache, list):
-            self.cache = cache
-        else:
-            self.cache = [cache]
+        super().__init__(secret_id, cache)
         self.kwarg_map = kwargs
-        self.secret_id = secret_id
 
     def __call__(self, func):
         """

@@ -98,7 +98,7 @@ class SecretCache:
         return secret.get("SecretBinary")
 
 
-def assume_account_role(account_id, role_name, duration = 900):
+def assume_account_role(account_id, role_name, duration=900):
     """Temporary assume cross-account role.
 
     :type account_id: str
@@ -120,13 +120,13 @@ def assume_account_role(account_id, role_name, duration = 900):
         RoleArn=role_arn,
         RoleSessionName=session_name,
         DurationSeconds=duration
-        )
+    )
     session = botocore.session.Session()
     session.set_credentials(
         access_key=response["Credentials"]["AccessKeyId"],
         secret_key=response["Credentials"]["SecretAccessKey"],
         token=response["Credentials"]["SessionToken"]
-        )
+    )
     return session
 
 
